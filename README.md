@@ -1,9 +1,5 @@
 # Deteksi Plagiarisme Rabin-Karp (Streamlit)
 
-Prototipe aplikasi deteksi kemiripan dokumen teks.
-Logika preprocessing, rolling hash, dan Jaccard diambil dari notebook
-`rabin_karp_simialirity (1).ipynb`.
-
 ## Alur
 
 1. Unggah n dokumen (`.txt`, `.pdf`, `.docx`).
