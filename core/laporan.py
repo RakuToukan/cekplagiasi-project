@@ -2,9 +2,6 @@
 import html
 from typing import List
 
-NAMA_JENIS = {"identik": "Kecocokan Identik", "parafrase": "Parafrase Dekat"}
-LABEL_SUMBER = {"identik": "Identik", "parafrase": "Parafrase", "campuran": "Identik + Parafrase"}
-
 # Warna per nomor dokumen (berulang jika dokumen lebih dari 8): (warna tegas, warna lembut)
 PALET_DOK = [
     ("#c2185b", "#fce4ec"), ("#1f5fd1", "#e3ecfc"), ("#0b7a52", "#dcf3e9"), ("#7b3fe4", "#eee6fd"),
@@ -23,9 +20,7 @@ def chip(nomor: int) -> str:
 CSS_DOKUMEN = """
 .dok { white-space: pre-line; font-size: 15.5px; line-height: 1.95; color: #1f2d3a; }
 .seg-link, .seg-link:hover { color: inherit; text-decoration: none; }
-.seg-mark { padding: 1px 2px; border-radius: 3px; color: inherit; }
-.seg-mark.identik { background: #fde7e7; border-bottom: 2px solid #d93b3b; }
-.seg-mark.parafrase { background: #fff3d6; border-bottom: 2px solid #e09a00; }
+.seg-mark { padding: 1px 2px; border-radius: 3px; color: inherit; border-bottom: 2px solid; }
 .seg-num { display: inline-block; min-width: 18px; height: 18px; padding: 0 4px; margin-right: 4px;
   border-radius: 4px; color: #fff; font-size: 11px; font-weight: 700; line-height: 18px;
   text-align: center; vertical-align: 2px; }
@@ -34,7 +29,6 @@ CSS_DOKUMEN = """
 .src-top { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .src-num { display: inline-block; min-width: 38px; padding: 2px 10px; border-radius: 999px; color: #fff;
   font-size: 12px; font-weight: 700; text-align: center; }
-.src-tag { padding: 2px 12px; border-radius: 999px; font-size: 12px; font-weight: 600; }
 .src-row { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
 .src-row b { font-size: 14px; color: #16283a; word-break: break-word; }
 .src-pct { font-size: 14px; font-weight: 700; color: #16283a; white-space: nowrap; }
@@ -43,13 +37,10 @@ CSS_DOKUMEN = """
 .legenda > b { color: #16283a; }
 .legenda .leg { display: inline-flex; align-items: center; word-break: break-word; }
 .legenda .leg i { font-style: normal; color: #5b6b7b; margin-left: 4px; }
-.seg-num.identik, .seg-badge.identik { background: #d93b3b; }
-.seg-num.parafrase, .seg-badge.parafrase { background: #e09a00; }
 .seg-card { border: 1px solid #e3e9ef; border-radius: 12px; padding: 14px 16px; margin-bottom: 12px;
   background: #fff; scroll-margin-top: 16px; }
 .seg-card:target { border-color: #0e6fa3; box-shadow: 0 0 0 2px rgba(14,111,163,.18); }
 .seg-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-.seg-badge { color: #fff; font-size: 12px; font-weight: 700; padding: 3px 8px; border-radius: 6px; }
 .seg-pct { font-weight: 700; font-size: 13.5px; color: #16283a; white-space: nowrap; }
 .seg-src { font-weight: 600; font-size: 13px; color: #34475a; margin: 10px 0 8px; word-break: break-word; }
 .seg-src span { font-weight: 400; color: #5b6b7b; }
@@ -76,36 +67,35 @@ def legenda(nama: List[str]) -> str:
     return f'<div class="legenda"><b>Nomor dokumen:</b>{item}</div>'
 
 
-def persen_turnitin(p: float) -> str:
-    return "<1%" if 0 < p < 1 else f"{p:.0f}%"
-
-
 def daftar_sumber(sumber: List[dict]) -> str:
-    """Daftar semua sumber yang cocok: nomor dokumen, jenis kecocokan, nama, dan persentase."""
+    """Daftar semua sumber yang cocok: nomor dokumen, nama, dan Jaccard similarity."""
     if not sumber:
         return '<p class="hint">Tidak ada dokumen lain yang cocok.</p>'
     baris = []
     for a in sumber:
-        tegas, lembut = warna_dok(a["nomor"])
+        tegas, _ = warna_dok(a["nomor"])
         baris.append(
             f'<div class="src-item"><div class="src-top">'
-            f'<span class="src-num" style="background:{tegas}">{a["nomor"]}</span>'
-            f'<span class="src-tag" style="background:{lembut};color:{tegas}">{LABEL_SUMBER[a["jenis"]]}</span></div>'
-            f'<div class="src-row"><b>{_esc(a["nama"])}</b><span class="src-pct">{persen_turnitin(a["persen"])}</span></div>'
-            f'<small>{a["kata"]} kata cocok &bull; Jaccard {a["jaccard"]:.2f}%</small></div>'
+            f'<span class="src-num" style="background:{tegas}">{a["nomor"]}</span></div>'
+            f'<div class="src-row"><b>{_esc(a["nama"])}</b><span class="src-pct">{a["jaccard"]:.2f}%</span></div>'
+            f'<small>Jaccard similarity &bull; {a["kata"]} kata ditandai</small></div>'
         )
     return "".join(baris)
 
 
 def render_dokumen(teks: str, words: list, segmen: List[dict], tautan: bool = True, awalan_id: str = "") -> str:
-    """Teks asli dengan highlight sesuai jenis dan nomor dokumen sumber kecocokan."""
+    """Teks asli dengan highlight berwarna sesuai dokumen sumber utama, plus nomor semua sumbernya."""
     bagian = []
     pos = 0
     for s in sorted(segmen, key=lambda s: s["lo"]):
         awal, akhir = words[s["lo"]]["start"], words[s["hi"]]["end"]
         bagian.append(_esc(teks[pos:awal]))
-        judul = _esc(f"{NAMA_JENIS[s['jenis']]}: cocok dengan {', '.join([s['sumber']] + s['sumber_lain'])}")
-        tanda = f'<mark class="seg-mark {s["jenis"]}" title="{judul}">{_nomor(s)}{_esc(teks[awal:akhir])}</mark>'
+        judul = _esc(f"Cocok dengan {', '.join([s['sumber']] + s['sumber_lain'])}")
+        tegas, lembut = warna_dok(s["nomor_dok"][0])
+        tanda = (
+            f'<mark class="seg-mark" style="background:{lembut};border-color:{tegas}" title="{judul}">'
+            f"{_nomor(s)}{_esc(teks[awal:akhir])}</mark>"
+        )
         if tautan:
             tanda = f'<a class="seg-link" href="#seg-{awalan_id}{s["no"]}">{tanda}</a>'
         bagian.append(tanda)
@@ -124,8 +114,7 @@ def kartu_segmen(s: dict, batas_kutipan: int = 420, awalan_id: str = "") -> str:
         else ""
     )
     return f"""<div class="seg-card" id="seg-{awalan_id}{s['no']}">
-  <div class="seg-head"><span>{_nomor(s)}<span class="seg-badge {s['jenis']}">{NAMA_JENIS[s['jenis']]}</span></span>
-  <span class="seg-pct">{s['persen']:.1f}% ({s['kata']} kata)</span></div>
+  <div class="seg-head"><span>{_nomor(s)}</span><span class="seg-pct">{s['kata']} kata</span></div>
   <div class="seg-src">Sumber: {_esc(s['sumber'])}</div>{lain}
   <div class="seg-quote"><b>TEKS PADA DATASET PEMBANDING:</b>&ldquo;{_esc(kutipan)}&rdquo;</div>
 </div>"""
@@ -161,8 +150,9 @@ th {{ background: #f4f7fa; width: 34%; }}
 .kepala small {{ display: block; color: #5b6b7b; font-size: 12.5px; margin-top: 2px; }}
 .kepala .kanan {{ color: #5b6b7b; font-size: 12.5px; white-space: nowrap; }}
 .badge {{ border-radius: 999px; padding: 2px 10px; font-size: 11.5px; font-weight: 700; margin-left: 6px; }}
-.badge-rendah {{ background: #e3f6ea; color: #1f9d55; }} .badge-sedang {{ background: #fff3d6; color: #c98200; }}
-.badge-tinggi {{ background: #fde7e7; color: #d93b3b; }} .badge-netral {{ background: #eef2f5; color: #5b6b7b; }}
+.badge-biru {{ background: #e3eefc; color: #1f6fd1; }} .badge-hijau {{ background: #e3f6ea; color: #1f9d55; }}
+.badge-kuning {{ background: #fff6cc; color: #b88a00; }} .badge-oranye {{ background: #ffead6; color: #e06b00; }}
+.badge-merah {{ background: #fde7e7; color: #d93b3b; }}
 .gulir {{ padding: 14px 18px; }}
 </style></head><body>
 <h1>{_esc(judul)}</h1>

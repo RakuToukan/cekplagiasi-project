@@ -60,10 +60,10 @@ def analisis(docs: tuple) -> list:
         skor.sort(key=lambda r: -r["jaccard"])
         segmen = susun_segmen(ix, nama, teks, pres, fps)
         jaccard_ke = {r["nama"]: r["jaccard"] for r in skor}
-        sumber = [
-            a | {"nama": nama[a["y"]], "jaccard": jaccard_ke[nama[a["y"]]]}
-            for a in sumber_teratas(segmen, len(pres[ix]["words"]))
-        ]
+        sumber = sorted(
+            (a | {"nama": nama[a["y"]], "jaccard": jaccard_ke[nama[a["y"]]]} for a in sumber_teratas(segmen)),
+            key=lambda a: (-a["jaccard"], a["y"]),
+        )
         per_x.append(
             {
                 "nama": nama[ix],
@@ -89,13 +89,31 @@ def angka(n: int) -> str:
     return f"{n:,}".replace(",", ".")
 
 
+# Kategori skor similarity mengikuti standar warna Turnitin:
+# (batas atas, kelas warna, label, status, tindakan yang disarankan)
+KATEGORI = [
+    (0, "biru", "Tidak Ada Kemiripan", "Unik",
+     "Tidak ada teks yang cocok. Dokumen sepenuhnya unik."),
+    (25, "hijau", "Kemiripan Rendah", "Aman",
+     "Umumnya aman. Tetap periksa sumber tunggal terbesar jika mendekati 20%."),
+    (50, "kuning", "Kemiripan Sedang", "Perlu Ditinjau",
+     "Tinjau kecocokan teks yang panjang dan lakukan parafrase ulang."),
+    (75, "oranye", "Kemiripan Tinggi", "Wajib Parafrase",
+     "Sebagian besar isi cocok dengan sumber lain. Tulis ulang bagian yang terdeteksi mirip."),
+    (None, "merah", "Kemiripan Sangat Tinggi", "Revisi Total",
+     "Hampir seluruh dokumen identik dengan sumber lain. Perlu revisi total."),
+]
+
+
 def tingkat(persen: float) -> tuple:
-    """Klasifikasi: ringan < 30%, sedang 30-70%, berat > 70%."""
-    if persen < 30:
-        return "rendah", "Kemiripan Rendah", "Aman"
-    if persen <= 70:
-        return "sedang", "Kemiripan Sedang", "Perlu Ditinjau"
-    return "tinggi", "Kemiripan Tinggi", "Berisiko"
+    """Kategori warna: 0% biru, 1-24% hijau, 25-49% kuning, 50-74% oranye, 75-100% merah."""
+    if persen <= 0:
+        return KATEGORI[0][1:4]
+    bulat = round(persen)  # dibandingkan dengan angka yang ditampilkan (tanpa desimal)
+    for batas, kelas, label, status, _ in KATEGORI[1:-1]:
+        if bulat < batas:
+            return kelas, label, status
+    return KATEGORI[-1][1:4]
 
 
 def judul_dokumen(nama: str) -> str:
@@ -129,7 +147,8 @@ CSS = """
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 :root { --primary:#0e6fa3; --primary-2:#1f6fe5; --navy:#12304a; --ink:#16283a; --muted:#5b6b7b;
   --line:#e3e9ef; --bg:#f4f7fa; --soft:#e8f2f9;
-  --hijau:#1f9d55; --hijau-bg:#e3f6ea; --kuning:#c98200; --kuning-bg:#fff3d6; --merah:#d93b3b; --merah-bg:#fde7e7; }
+  --biru:#1f6fd1; --biru-bg:#e3eefc; --hijau:#1f9d55; --hijau-bg:#e3f6ea; --kuning:#b88a00; --kuning-bg:#fff6cc;
+  --oranye:#e06b00; --oranye-bg:#ffead6; --merah:#d93b3b; --merah-bg:#fde7e7; }
 .stApp { background: var(--bg); color: var(--ink); }
 [data-testid="stMain"], [data-testid="stAppViewContainer"] { overflow-x: clip; }
 .stApp, .stApp p, .stApp div, .stApp label, .stApp input, .stApp button,
@@ -211,11 +230,14 @@ header[data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecor
 .sim-badge { border-radius: 999px; padding: 5px 14px; font-weight: 700; font-size: 13px; min-width: 56px; text-align: center; }
 .sim-bar { flex: 1; max-width: 100px; height: 5px; background: #e3ebf0; border-radius: 9px; overflow: hidden; }
 .sim-bar i { display: block; height: 100%; border-radius: 9px; }
-.rendah .sim-badge, .badge-rendah { background: var(--hijau-bg); color: var(--hijau); }
-.sedang .sim-badge, .badge-sedang { background: var(--kuning-bg); color: var(--kuning); }
-.tinggi .sim-badge, .badge-tinggi { background: var(--merah-bg); color: var(--merah); }
-.rendah .sim-bar i { background: var(--hijau); } .sedang .sim-bar i { background: var(--kuning); }
-.tinggi .sim-bar i { background: var(--merah); }
+.biru .sim-badge, .badge-biru { background: var(--biru-bg); color: var(--biru); }
+.hijau .sim-badge, .badge-hijau { background: var(--hijau-bg); color: var(--hijau); }
+.kuning .sim-badge, .badge-kuning { background: var(--kuning-bg); color: var(--kuning); }
+.oranye .sim-badge, .badge-oranye { background: var(--oranye-bg); color: var(--oranye); }
+.merah .sim-badge, .badge-merah { background: var(--merah-bg); color: var(--merah); }
+.biru .sim-bar i { background: var(--biru); } .hijau .sim-bar i { background: var(--hijau); }
+.kuning .sim-bar i { background: var(--kuning); } .oranye .sim-bar i { background: var(--oranye); }
+.merah .sim-bar i { background: var(--merah); }
 .kosong { text-align: center; color: var(--muted); font-size: 14px; padding: 26px 0 30px; border-top: 1px solid var(--line); }
 
 .kaki { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 12px; margin-top: 6px; }
@@ -233,7 +255,8 @@ header[data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecor
 .ringkas-kiri { display: flex; gap: 20px; align-items: center; padding-right: 24px; border-right: 1px solid var(--line); }
 .cincin { --c: var(--hijau); width: 92px; height: 92px; border-radius: 50%; flex: none; display: grid; place-items: center;
   background: conic-gradient(var(--c) calc(var(--p) * 1%), #e6edf2 0); }
-.cincin.sedang { --c: var(--kuning); } .cincin.tinggi { --c: var(--merah); }
+.cincin.biru { --c: var(--biru); } .cincin.kuning { --c: var(--kuning); }
+.cincin.oranye { --c: var(--oranye); } .cincin.merah { --c: var(--merah); }
 .cincin > div { width: 74px; height: 74px; border-radius: 50%; background: #fff; display: flex; flex-direction: column;
   align-items: center; justify-content: center; }
 .cincin b { font-size: 21px; font-weight: 800; color: var(--c); line-height: 1; }
@@ -461,13 +484,8 @@ def kartu_pembanding(hy: dict) -> str:
 
     Angka pada highlight adalah nomor dokumen sumber kecocokan (lihat legenda).
     """
-    total_y = len(hy["words"])
-    persen = 100 * hy["kata_cocok"] / total_y if total_y else 0.0
-    if hy["segmen"]:
-        lvl_y, label_y, _ = tingkat(hy["similarity"])
-        badge = f'<span class="badge badge-{lvl_y}">{label_y}</span>'
-    else:
-        badge = '<span class="badge badge-netral">Tidak terdeteksi plagiat</span>'
+    lvl_y, label_y, _ = tingkat(hy["similarity"])
+    badge = f'<span class="badge badge-{lvl_y}">{label_y}</span>'
     return (
         f'<div class="kartu isi"><div class="kepala"><div><b>{esc(hy["nama"])}</b> {badge}'
         f"<small>{info_dokumen(hy)}</small></div>"
@@ -477,12 +495,10 @@ def kartu_pembanding(hy: dict) -> str:
 
 
 def info_dokumen(hy: dict) -> str:
-    total_y = len(hy["words"])
-    persen = 100 * hy["kata_cocok"] / total_y if total_y else 0.0
     terdekat = f' dengan {esc(hy["skor"][0]["nama"])}' if hy["skor"] else ""
     return (
-        f'Similarity tertinggi {hy["similarity"]:.2f}%{terdekat} &bull; '
-        f'{angka(hy["kata_cocok"])} dari {angka(total_y)} kata cocok ({persen:.1f}%)'
+        f'Jaccard similarity tertinggi {hy["similarity"]:.2f}%{terdekat} &bull; '
+        f'{angka(hy["kata_cocok"])} dari {angka(len(hy["words"]))} kata ditandai'
     )
 
 
@@ -491,17 +507,13 @@ def tampil_pembanding(hy: dict, nomor: int):
     awalan = f"d{nomor}-"
     segmen_y = hy["segmen"]
     total_y = len(hy["words"])
-    persen = 100 * hy["kata_cocok"] / total_y if total_y else 0.0
-    if segmen_y:
-        lvl_y, label_y, _ = tingkat(hy["similarity"])
-        badge = f'<span class="badge badge-{lvl_y}">{label_y}</span>'
-    else:
-        badge = '<span class="badge badge-netral">Tidak terdeteksi plagiat</span>'
+    lvl_y, label_y, _ = tingkat(hy["similarity"])
+    badge = f'<span class="badge badge-{lvl_y}">{label_y}</span>'
     kiri, kanan = st.columns([1.12, 0.88], gap="medium")
     kiri.html(
         f'<div class="kartu isi"><div class="kepala"><div><b>Pratinjau Dokumen Pembanding &mdash; '
         f'{esc(hy["nama"])}</b> {badge}'
-        "<small>Angka = nomor dokumen yang cocok. Klik teks yang ditandai untuk melihat rinciannya.</small></div>"
+        "<small>Warna dan angka = dokumen yang cocok. Klik teks yang ditandai untuk melihat rinciannya.</small></div>"
         f'<span class="kanan">{angka(total_y)} kata</span></div>'
         f'<div class="gulir">{render_dokumen(hy["teks"], hy["words"], segmen_y, awalan_id=awalan)}</div></div>'
     )
@@ -512,9 +524,8 @@ def tampil_pembanding(hy: dict, nomor: int):
         f'<div class="kartu isi"><div class="kepala"><div><b>Rincian Bagian Cocok</b>'
         f"<small>{info_dokumen(hy)}</small></div></div><div class=\"gulir\">"
         f'<div class="subjudul">SUMBER TERINDIKASI PLAGIAT ({len(hy["sumber"])})</div>'
-        '<div class="hint">Semua dokumen yang memiliki bagian cocok dengan dokumen ini. Persentase = kata yang '
-        "cocok dengan sumber tersebut / total kata. Satu bagian bisa cocok dengan beberapa sumber, jadi "
-        "jumlah persentase bisa melebihi 100%.</div>"
+        '<div class="hint">Semua dokumen yang memiliki bagian cocok dengan dokumen ini, '
+        "diurutkan dari Jaccard similarity tertinggi.</div>"
         f"{daftar_sumber(hy['sumber'])}"
         f'<div class="subjudul" style="margin-top:20px">BAGIAN COCOK ({len(segmen_y)})</div>'
         f'{kartu or "<p class=hint>Tidak ada bagian yang cocok dengan dokumen lain.</p>"}</div></div>'
@@ -531,8 +542,6 @@ def halaman_detail():
     segmen, skor = hx["segmen"], hx["skor"]
     lvl, label, status = tingkat(hx["similarity"])
     total = len(hx["words"])
-    persen_cocok = 100 * hx["kata_cocok"] / total if total else 0.0
-    n_identik = sum(s["jenis"] == "identik" for s in segmen)
     judul = batch["judul"] or judul_dokumen(hx["nama"])
     pembanding = [r["nama"] for r in skor]
     teks_pembanding = pembanding[0] if len(pembanding) == 1 else f"{len(pembanding)} dokumen"
@@ -555,8 +564,8 @@ def halaman_detail():
         [
             ("Similarity (Jaccard tertinggi)", f"{hx['similarity']:.2f}% ({label})"),
             ("Total kata diperiksa", angka(total)),
-            ("Kata terdeteksi cocok", f"{angka(hx['kata_cocok'])} ({persen_cocok:.1f}%)"),
-            ("Bagian cocok", f"{len(segmen)} segmen ({n_identik} identik, {len(segmen) - n_identik} parafrase)"),
+            ("Kata ditandai", angka(hx["kata_cocok"])),
+            ("Bagian cocok", f"{len(segmen)} segmen dari {len(hx['sumber'])} dokumen sumber"),
         ],
         skor,
         render_dokumen(hx["teks"], hx["words"], segmen, tautan=False),
@@ -583,10 +592,10 @@ def halaman_detail():
         f"<div><h4>Tingkat {label}</h4><p>{deskripsi}</p></div></div>"
         '<div class="statistik">'
         f'<div class="stat"><small>Total Kata Diperiksa</small><b>{angka(total)}</b><span>{ext}</span></div>'
-        f'<div class="stat"><small>Kata Terdeteksi Cocok</small><b>{angka(hx["kata_cocok"])}</b>'
-        f"<span>{persen_cocok:.1f}% dari total teks</span></div>"
+        f'<div class="stat"><small>Kata Ditandai</small><b>{angka(hx["kata_cocok"])}</b>'
+        f"<span>dari {angka(total)} kata</span></div>"
         f'<div class="stat"><small>Bagian Cocok</small><b>{len(segmen)} Segmen</b>'
-        f"<span>{n_identik} identik, {len(segmen) - n_identik} parafrase</span></div>"
+        f"<span>dari {len(hx['sumber'])} dokumen sumber</span></div>"
         f'<div class="stat"><small>Fingerprint Sama</small><b>{terbaik["sama"] if terbaik else 0}</b>'
         f'<span>dari {terbaik["gabungan"] if terbaik else 0} fingerprint gabungan</span></div>'
         "</div></div></div>"
@@ -599,8 +608,8 @@ def halaman_detail():
     )
     st.html(
         f'<div class="kartu tipis">{html_legenda}<div class="hint" style="margin-top:6px">'
-        "Angka pada highlight menunjukkan dokumen yang cocok dengan bagian tersebut. "
-        "Merah: teks identik. Kuning: parafrase dekat.</div>"
+        "Warna highlight mengikuti dokumen sumber utama; angka menunjukkan semua dokumen yang cocok "
+        "dengan bagian tersebut.</div>"
         f'<div class="subjudul" style="margin-top:16px">SKOR {esc(hx["nama"]).upper()} TERHADAP DOKUMEN LAIN</div>'
         '<table class="skor-tabel"><tr><th>Dokumen pembanding</th><th style="text-align:right">Sama / Gabungan</th>'
         f'<th style="text-align:right">Jaccard</th></tr>{baris_skor}</table></div>'
@@ -619,12 +628,20 @@ def halaman_detail():
     st.html(
         '<div class="catatan"><b>Catatan Akademik: Persentase similarity menunjukkan kemiripan teks, bukan '
         "penentu plagiasi secara mutlak. Tinjau setiap segmen yang ditandai sebelum memberikan penilaian akhir.</b>"
-        "<br>Similarity = Jaccard Coefficient tertinggi terhadap dokumen pembanding. Merah: teks identik. "
-        "Kuning: sama setelah huruf kecil, hapus kata henti, dan potong imbuhan (parafrase dekat).</div>"
+        "<br>Similarity = Jaccard Coefficient tertinggi terhadap dokumen pembanding. Warna highlight "
+        "mengikuti warna nomor dokumen sumber di legenda.</div>"
     )
 
 
 # ================================================================ halaman statis
+
+def baris_kategori() -> str:
+    rentang = ["0%", "1% &ndash; 24%", "25% &ndash; 49%", "50% &ndash; 74%", "75% &ndash; 100%"]
+    return "".join(
+        f'<tr><td><span class="badge badge-{kelas}">{r}</span></td><td>{label} ({status})</td><td>{saran}</td></tr>'
+        for r, (_, kelas, label, status, saran) in zip(rentang, KATEGORI)
+    )
+
 
 def halaman_panduan():
     st.html(
@@ -636,13 +653,11 @@ def halaman_panduan():
         "Setiap dokumen bergantian menjadi dokumen uji dan dibandingkan dengan semua dokumen lain.</p>"
         "<h4>3. Baca hasil</h4><p>Tabel hasil menampilkan satu baris per dokumen uji. Klik <b>Lihat Hasil</b> "
         "untuk membuka pratinjau dokumen dengan bagian yang cocok diberi nomor dan warna.</p>"
-        "<h4>Arti tingkat kemiripan</h4><ul>"
-        "<li><b>Rendah</b> (di bawah 30%): aman.</li>"
-        "<li><b>Sedang</b> (30% sampai 70%): perlu ditinjau.</li>"
-        "<li><b>Tinggi</b> (di atas 70%): berisiko plagiasi.</li></ul>"
-        "<h4>Arti warna segmen</h4><ul>"
-        "<li><b>Merah, Kecocokan Identik</b>: teks sama persis dengan dokumen pembanding (huruf besar dan tanda baca diabaikan).</li>"
-        "<li><b>Kuning, Parafrase Dekat</b>: susunan kata dasarnya sama, tetapi imbuhan, kata henti, atau ejaan berbeda.</li></ul>"
+        "<h4>Arti warna skor similarity</h4><p>Mengikuti kategori warna Turnitin.</p>"
+        f"<table class=\"skor-tabel\"><tr><th>Skor</th><th>Kategori</th><th>Tindakan yang disarankan</th></tr>{baris_kategori()}</table>"
+        "<h4>Arti warna dan angka highlight</h4><p>Setiap dokumen di dataset punya nomor dan warna sendiri "
+        "(lihat legenda di halaman hasil). Warna highlight mengikuti dokumen sumber utama bagian tersebut, "
+        "dan angka di depannya menunjukkan semua dokumen yang memuat bagian yang sama.</p>"
         "<h4>Cara kerja singkat</h4><p>Teks dibersihkan (huruf kecil, hapus angka dan tanda baca), kata henti "
         "dihapus, dan imbuhan dipotong dengan Sastrawi. Teks lalu dipecah menjadi n-gram dua kata, setiap n-gram "
         "diubah menjadi nilai hash dengan Rolling Hash, dan dicocokkan dengan algoritma Rabin-Karp. Skor dihitung "

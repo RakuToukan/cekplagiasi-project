@@ -1,21 +1,12 @@
-"""Menyusun bagian cocok (segmen) dokumen uji X terhadap dokumen pembanding.
+"""Menyusun bagian cocok (segmen) sebuah dokumen terhadap dokumen lain di dataset.
 
-1. Untuk setiap pembanding Y, cari deretan n-gram berurutan yang cocok di X dan Y
+1. Untuk setiap dokumen lain Y, cari deretan n-gram berurutan yang cocok di X dan Y
    (diagonal). Kecocokan dicari lewat hash Rabin-Karp lalu diverifikasi string-nya.
 2. Setiap deretan dipetakan ke rentang kata asli di X dan di Y.
 3. Rentang di X yang tumpang tindih atau bersebelahan digabung menjadi satu segmen.
    Sumber utama segmen = deretan terpanjang di dalamnya.
-4. Segmen diberi jenis "identik" jika teks asli X dan Y sama (abaikan huruf besar
-   dan tanda baca), selain itu "parafrase" (sama setelah preprocessing).
 """
-import re
 from typing import List
-
-_NON_KATA = re.compile(r"[^\w]+")
-
-
-def _normal(teks: str) -> str:
-    return _NON_KATA.sub(" ", teks.lower()).strip()
 
 
 def deret_cocok(fp_x: dict, fp_y: dict) -> List[tuple]:
@@ -43,21 +34,15 @@ def _potong(teks: str, words: list, lo: int, hi: int) -> str:
 
 def susun_segmen(ix: int, nama: list, teks: list, pres: list, fps: list) -> List[dict]:
     words_x = pres[ix]["words"]
-    total = len(words_x)
     kandidat = []
     for iy in range(len(fps)):
         if iy == ix:
             continue
-        words_y = pres[iy]["words"]
         for i0, i1, j0, j1 in deret_cocok(fps[ix], fps[iy]):
             x_lo, x_hi = _rentang_kata(fps[ix], i0, i1)
             y_lo, y_hi = _rentang_kata(fps[iy], j0, j1)
-            sama = _normal(_potong(teks[ix], words_x, x_lo, x_hi)) == _normal(_potong(teks[iy], words_y, y_lo, y_hi))
             kandidat.append(
-                {
-                    "x_lo": x_lo, "x_hi": x_hi, "y": iy, "y_lo": y_lo, "y_hi": y_hi,
-                    "kata": x_hi - x_lo + 1, "jenis": "identik" if sama else "parafrase",
-                }
+                {"x_lo": x_lo, "x_hi": x_hi, "y": iy, "y_lo": y_lo, "y_hi": y_hi, "kata": x_hi - x_lo + 1}
             )
 
     kandidat.sort(key=lambda k: (k["x_lo"], -k["kata"]))
@@ -73,48 +58,32 @@ def susun_segmen(ix: int, nama: list, teks: list, pres: list, fps: list) -> List
     for no, g in enumerate(gabung, 1):
         utama = max(g["kandidat"], key=lambda k: k["kata"])
         words_y = pres[utama["y"]]["words"]
-        teks_y = _potong(teks[utama["y"]], words_y, utama["y_lo"], utama["y_hi"])
-        kata = g["hi"] - g["lo"] + 1
         segmen.append(
             {
                 "no": no,
                 "lo": g["lo"],
                 "hi": g["hi"],
-                "kata": kata,
-                "persen": 100 * kata / total if total else 0.0,
-                "jenis": utama["jenis"],
+                "kata": g["hi"] - g["lo"] + 1,
                 "sumber": nama[utama["y"]],
                 "sumber_lain": sorted({nama[k["y"]] for k in g["kandidat"]} - {nama[utama["y"]]}),
                 # nomor dokumen sumber (urutan di dataset, mulai 1), sumber utama di depan
                 "nomor_dok": [utama["y"] + 1] + sorted({k["y"] + 1 for k in g["kandidat"]} - {utama["y"] + 1}),
                 "teks_x": _potong(teks[ix], words_x, g["lo"], g["hi"]),
-                "teks_sumber": teks_y,
+                "teks_sumber": _potong(teks[utama["y"]], words_y, utama["y_lo"], utama["y_hi"]),
                 "kandidat": g["kandidat"],
             }
         )
     return segmen
 
 
+def sumber_teratas(segmen: List[dict]) -> List[dict]:
+    """Semua dokumen sumber yang cocok dengan dokumen ini, beserta jumlah kata yang cocok.
 
-def sumber_teratas(segmen: List[dict], total_kata: int) -> List[dict]:
-    """Semua dokumen sumber yang cocok dengan dokumen ini, beserta persentasenya.
-
-    Persentase sumber = kata di dokumen ini yang cocok dengan sumber tersebut / total kata.
-    Satu bagian bisa cocok dengan beberapa sumber sekaligus, jadi setiap sumber dihitung
-    penuh (tidak dibagi) dan jumlah persentase semua sumber bisa melebihi total kata yang ditandai.
+    Satu bagian bisa cocok dengan beberapa sumber sekaligus, jadi setiap sumber dihitung penuh.
     """
     per_sumber = {}
     for s in segmen:
         for k in s["kandidat"]:
-            a = per_sumber.setdefault(k["y"], {"y": k["y"], "kata_set": set(), "jenis_set": set()})
-            a["kata_set"].update(range(k["x_lo"], k["x_hi"] + 1))
-            a["jenis_set"].add(k["jenis"])
-    hasil = []
-    for a in per_sumber.values():
-        jenis = a.pop("jenis_set")
-        a["kata"] = len(a.pop("kata_set"))
-        a["jenis"] = next(iter(jenis)) if len(jenis) == 1 else "campuran"
-        a["nomor"] = a["y"] + 1
-        a["persen"] = 100 * a["kata"] / total_kata if total_kata else 0.0
-        hasil.append(a)
+            per_sumber.setdefault(k["y"], set()).update(range(k["x_lo"], k["x_hi"] + 1))
+    hasil = [{"y": y, "nomor": y + 1, "kata": len(kata)} for y, kata in per_sumber.items()]
     return sorted(hasil, key=lambda a: (-a["kata"], a["y"]))
